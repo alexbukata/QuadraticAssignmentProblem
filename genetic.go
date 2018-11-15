@@ -21,7 +21,7 @@ func calcCost(assignment []int, instance *Instance) int {
 	return cost
 }
 
-func Solve(instance Instance) []int {
+func Solve(instance Instance) Solution {
 	population := generateInitialPopulation(instance, 1000, len(instance.Distances))
 	var minIndiv Solution
 	min := 9223372036854775807
@@ -37,7 +37,7 @@ func Solve(instance Instance) []int {
 		}
 	}
 	fmt.Printf("%v", minIndiv)
-	return []int{}
+	return minIndiv
 }
 
 func generateInitialPopulation(instance Instance, populationSize int, geneNumber int) []Solution {
