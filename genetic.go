@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 )
@@ -12,19 +13,21 @@ type Solution struct {
 	cost       int
 }
 
-func calcCost(assignment []int, instance *Instance) int {
-	cost := 0
-	for location := 0; location < len(assignment); location++ {
-		facility := assignment[location]
+func (s *Solution) String() string {
+	return fmt.Sprintf("instance:\t%s\nassignment=%v\ncost=%d\n", s.instance.String(), s.assignment, s.cost)
+}
+
+func calcCost(assignment []int, instance *Instance) (cost int) {
+	for location, facility := range assignment {
 		cost += instance.Distances[facility][location] * instance.Flows[facility][location]
 	}
 	return cost
 }
 
-func Solve(instance Instance) Solution {
+func Solve(instance *Instance) Solution {
 	population := generateInitialPopulation(instance, 1000, len(instance.Distances))
 	var minIndiv Solution
-	min := 9223372036854775807
+	min := math.MaxInt64
 	for i := 0; i < 50000; i++ {
 		parents := selectParents(population)
 		children := generateChildren(parents, 1000)
@@ -36,11 +39,11 @@ func Solve(instance Instance) Solution {
 			}
 		}
 	}
-	fmt.Printf("%v", minIndiv)
+	fmt.Println(minIndiv.String())
 	return minIndiv
 }
 
-func generateInitialPopulation(instance Instance, populationSize int, geneNumber int) []Solution {
+func generateInitialPopulation(instance *Instance, populationSize int, geneNumber int) []Solution {
 	population := make([]Solution, populationSize)
 	for i := 0; i < populationSize; i++ {
 		assignment := make([]int, geneNumber)
@@ -53,7 +56,7 @@ func generateInitialPopulation(instance Instance, populationSize int, geneNumber
 			ix := rand.Intn(geneNumber)
 			assignment[j], assignment[ix] = assignment[ix], assignment[j]
 		}
-		population[i] = Solution{instance: &instance, assignment: assignment}
+		population[i] = Solution{instance: instance, assignment: assignment}
 	}
 	return population
 }
@@ -104,12 +107,4 @@ func mutate(solutions []Solution) []Solution {
 		}
 	}
 	return solutions
-}
-
-func populationCost(population []Solution) int {
-	sum := 0
-	for _, indiv := range population {
-		sum += indiv.cost
-	}
-	return sum
 }

@@ -2,61 +2,68 @@ package main
 
 import (
 	"bufio"
-	"log"
+	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var spaces = regexp.MustCompile(`\s+`)
 
 type Instance struct {
 	Distances [][]int
 	Flows     [][]int
 }
 
-func Read(path string) Instance {
-	file, e := os.Open(path)
-	if e != nil {
-		log.Fatal(e)
+func (i *Instance) String() string {
+	return fmt.Sprintf("distances:%v\n\tflows:\t%v\n", i.Distances, i.Flows)
+}
+
+func (i *Instance) Read(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
 	}
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Scan()
 	numberOfObjectsStr := scanner.Text()
 	numberOfObjectsStr = strings.Trim(numberOfObjectsStr, " ")
-	numberOfObjects, e := strconv.Atoi(numberOfObjectsStr)
-	if e != nil {
-		log.Fatal(e)
+	numberOfObjects, err := strconv.Atoi(numberOfObjectsStr)
+	if err != nil {
+		return err
 	}
-	distances := readMatrix(numberOfObjects, scanner)
+	distances, err := readMatrix(numberOfObjects, scanner)
+	if err != nil {
+		return err
+	}
 	scanner.Scan()
-	flows := readMatrix(numberOfObjects, scanner)
-	return Instance{Distances: distances, Flows: flows}
+	flows, err := readMatrix(numberOfObjects, scanner)
+	if err != nil {
+		return err
+	}
+	i.Distances = distances
+	i.Flows = flows
+	return nil
 }
 
-func readMatrix(numberOfObjects int, scanner *bufio.Scanner) [][]int {
+func readMatrix(numberOfObjects int, scanner *bufio.Scanner) ([][]int, error) {
 	matrix := make([][]int, numberOfObjects)
 	for i := 0; i < numberOfObjects; i++ {
-		scanner.Scan()
+		if !scanner.Scan() {
+			return nil, fmt.Errorf("scanner failed")
+		}
 		text := scanner.Text()
-		distancesStrs := filter(strings.Split(text, " "), func(s string) bool {
-			return len(s) > 0
-		})
-		for j := 0; j < len(distancesStrs); j ++ {
-			if j == 0 {
-				matrix[i] = make([]int, numberOfObjects)
+		spaceless := strings.TrimSpace(spaces.ReplaceAllString(text, " "))
+		distancesStrs := strings.Split(spaceless, " ")
+		for _, dist := range distancesStrs {
+			number, err := strconv.Atoi(dist)
+			if err != nil {
+				return nil, err
 			}
-			matrix[i][j], _ = strconv.Atoi(distancesStrs[j])
+			matrix[i] = append(matrix[i], number)
 		}
 	}
-	return matrix
-}
-
-func filter(vs []string, f func(string) bool) []string {
-	vsf := make([]string, 0)
-	for _, v := range vs {
-		if f(v) {
-			vsf = append(vsf, v)
-		}
-	}
-	return vsf
+	return matrix, nil
 }
