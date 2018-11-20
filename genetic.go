@@ -19,26 +19,47 @@ func (s *Solution) String() string {
 }
 
 func calcCost(assignment []int, instance *Instance) (cost int) {
-	for i := 0; i < len(instance.Distances)-1; i++ {
-		for j := i + 1; j < len(instance.Distances); j++ {
-			cost += instance.Flows[i][j] * instance.Distances[assignment[i]][assignment[j]]
+	for i := 0; i < len(instance.Distances); i++ {
+		for j := 0; j < len(instance.Distances); j++ {
+			cost += instance.Flows[assignment[i]][assignment[j]] * instance.Distances[i][j]
 		}
 	}
 	return cost
 }
 
 func Solve(instance *Instance) Solution {
-	population := generateInitialPopulation(instance, 2000, len(instance.Distances))
+	populationSize := 100
+	population := generateInitialPopulation(instance, populationSize, len(instance.Distances))
 	var minIndiv Solution
 	min := math.MaxInt64
-	for i := 0; i < 300000; i++ {
-		parents := selectParents(population)
-		children := generateChildren(parents, 2000)
-		population = mutate(children)
+	for i := 0; i < 200000; i++ {
+		//fmt.Print("Generation ")
+		//fmt.Println(i)
+		parents := selectParents(population, populationSize/2)
+		children := generateChildren(parents, populationSize)
+		population = append(parents, children...)
+		population = mutate(population)
+
+		//repeats := 0
+		//for j := 0; j < len(population)-1; j++ {
+		//	for k := j + 1; k < len(population); k++ {
+		//		first := population[j]
+		//		second := population[k]
+		//		if first.cost == second.cost {
+		//			repeats++
+		//		}
+		//	}
+		//}
+		//fmt.Print("Repeats ")
+		//fmt.Println(repeats)
+
 		for _, indiv := range population {
 			if indiv.cost < min {
 				minIndiv = indiv
 				min = indiv.cost
+				fmt.Print(i)
+				fmt.Print(" New best result ")
+				fmt.Println(min)
 			}
 		}
 	}
@@ -59,62 +80,99 @@ func generateInitialPopulation(instance *Instance, populationSize int, geneNumbe
 			ix := rand.Intn(geneNumber)
 			assignment[j], assignment[ix] = assignment[ix], assignment[j]
 		}
-		population[i] = Solution{instance: instance, assignment: assignment}
+		cost := calcCost(assignment, instance)
+		for j := 0; j < i; j++ {
+			if population[i].cost == cost {
+				i--
+				continue
+			}
+		}
+		population[i] = Solution{instance: instance, assignment: assignment, cost: cost}
 	}
 	return population
 }
 
-func selectParents(solutions []Solution) []Solution {
-	childs := solutions
-	sort.Slice(childs, func(i, j int) bool {
-		return childs[i].cost < childs[j].cost
+func selectParents(solutions []Solution, number int) []Solution {
+	parents := make([]Solution, len(solutions))
+	copy(parents, solutions)
+	sort.Slice(parents, func(i, j int) bool {
+		return parents[i].cost < parents[j].cost
 	})
-	return childs[len(childs)-int(len(childs)/10):]
+	return parents[len(parents)-number:]
 }
 
-func generateChildrenOld(solutions []Solution, requiredSize int) []Solution {
-	var children []Solution
-	for len(children) <= requiredSize {
-		firstParentIndex := rand.Intn(len(solutions))
-		secondParentIndex := rand.Intn(len(solutions))
-		if firstParentIndex == secondParentIndex {
-			continue
+func generateChildrenOld(parents []Solution, requiredSize int) []Solution {
+	children := make([]Solution, requiredSize)
+	childrenIndex := 0
+	for childrenIndex <= requiredSize {
+		childrenChan := make(chan Solution, 20)
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go doGenerateChildren(parents, childrenChan, &wg)
 		}
-		firstParentAssignment := solutions[firstParentIndex].assignment
-		secondParentAssignment := solutions[secondParentIndex].assignment
-		newChildGenes := make([]int, len(firstParentAssignment))
-		copy(newChildGenes, firstParentAssignment[:len(firstParentAssignment)/2])
-		geneIndex := len(firstParentAssignment) / 2
-		for i := 0; i < len(secondParentAssignment); i++ {
+		wg.Wait()
+		close(childrenChan)
+		for child := range childrenChan {
 			valid := true
-			for j := 0; j < len(newChildGenes); j++ {
-				if secondParentAssignment[i] == newChildGenes[j] {
+			for _, parent := range parents {
+				if parent.cost == child.cost {
+					valid = false
+					break
+				}
+			}
+			for j := 0; j < childrenIndex; j++ {
+				if children[j].cost == child.cost {
 					valid = false
 					break
 				}
 			}
 			if valid {
-				newChildGenes[geneIndex] = secondParentAssignment[i]
+				children[childrenIndex] = child
+				childrenIndex++
+				if childrenIndex == requiredSize {
+					return children
+				}
 			}
 		}
-		instance := solutions[firstParentIndex].instance
-		newChild := Solution{instance: instance, assignment: newChildGenes, cost: calcCost(newChildGenes, instance)}
-		children = append(children, newChild)
 	}
 	return children
 }
 
-func generateChildren(solutions []Solution, requiredSize int) []Solution {
-	childrenChan := make(chan Solution, requiredSize*2)
-	var children []Solution
-	var wg sync.WaitGroup
-	for i := 0; i < requiredSize; i++ {
-		wg.Add(1)
-		go doGenerateChildren(solutions, childrenChan, &wg)
-	}
-	wg.Wait()
-	for i := 0; i < len(childrenChan); i++ {
-		children = append(children, <-childrenChan)
+func generateChildren(parents []Solution, requiredSize int) []Solution {
+	children := make([]Solution, requiredSize)
+	childrenIndex := 0
+	for childrenIndex <= requiredSize {
+		childrenChan := make(chan Solution, requiredSize*2)
+		var wg sync.WaitGroup
+		for i := 0; i < requiredSize; i++ {
+			wg.Add(1)
+			go doGenerateChildren(parents, childrenChan, &wg)
+		}
+		wg.Wait()
+		close(childrenChan)
+		for child := range childrenChan {
+			valid := true
+			for _, parent := range parents {
+				if parent.cost == child.cost {
+					valid = false
+					break
+				}
+			}
+			for j := 0; j < childrenIndex; j++ {
+				if children[j].cost == child.cost {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				children[childrenIndex] = child
+				childrenIndex++
+				if childrenIndex == requiredSize {
+					return children
+				}
+			}
+		}
 	}
 	return children
 }
@@ -136,7 +194,7 @@ func doGenerateChildren(solutions []Solution, childrenChan chan Solution, wg *sy
 	wg.Done()
 }
 
-func crossover(firstParent *Solution, secondParent *Solution, instance *Instance) Solution {
+func crossoverOld(firstParent *Solution, secondParent *Solution, instance *Instance) Solution {
 	firstParentAssignment := firstParent.assignment
 	secondParentAssignment := secondParent.assignment
 	newChildGenes := make([]int, len(firstParentAssignment))
@@ -158,14 +216,46 @@ func crossover(firstParent *Solution, secondParent *Solution, instance *Instance
 	return Solution{instance: instance, assignment: newChildGenes, cost: calcCost(newChildGenes, instance)}
 }
 
+func crossover(firstParent *Solution, secondParent *Solution, instance *Instance) Solution {
+	firstParentAssignment := firstParent.assignment
+	secondParentAssignment := secondParent.assignment
+	newChildGenes := make([]int, len(firstParentAssignment))
+	geneIndex := 0
+	firstBreak := rand.Intn(len(firstParentAssignment)/2-1) + 1
+	secondBreak := rand.Intn(len(firstParentAssignment)/2-2) + len(firstParentAssignment)/2 + 1
+	for i := 0; i < len(secondParentAssignment); i++ {
+		for j := 0; j < firstBreak; j++ {
+			if secondParentAssignment[i] == firstParentAssignment[j] {
+				newChildGenes[geneIndex] = secondParentAssignment[i]
+				geneIndex++
+				break
+			}
+		}
+	}
+	for i := firstBreak; i <= secondBreak; i++ {
+		newChildGenes[geneIndex] = firstParentAssignment[i]
+		geneIndex++
+	}
+	for i := 0; i < len(secondParentAssignment); i++ {
+		for j := secondBreak + 1; j < len(firstParentAssignment); j++ {
+			if secondParentAssignment[i] == firstParentAssignment[j] {
+				newChildGenes[geneIndex] = secondParentAssignment[i]
+				geneIndex++
+				break
+			}
+		}
+	}
+	return Solution{instance: instance, assignment: newChildGenes, cost: calcCost(newChildGenes, instance)}
+}
+
 func mutate(solutions []Solution) []Solution {
-	for i := 0; ; i = (i + 1) % len(solutions) {
-		if rand.Float32() < 0.01 {
+	for i := 0; i < len(solutions); i++ {
+		if rand.Float32() < 0.1 {
 			solutionAssignment := solutions[i].assignment
 			firstIndex := rand.Intn(len(solutionAssignment))
 			secondIndex := rand.Intn(len(solutionAssignment))
 			solutionAssignment[firstIndex], solutionAssignment[secondIndex] = solutionAssignment[secondIndex], solutionAssignment[firstIndex]
-			break
+			solutions[i].cost = calcCost(solutionAssignment, solutions[i].instance)
 		}
 	}
 	return solutions
